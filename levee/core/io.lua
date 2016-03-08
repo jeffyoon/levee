@@ -11,6 +11,9 @@ local p = require("levee.p")
 
 local MIN_SPLICE_SIZE = 4 * _.pagesize
 
+local tmp_buf_size = 8192
+local tmp_buf = ffi.cast("uint8_t *", ffi.gc(C.malloc(tmp_buf_size), C.free))
+
 
 --
 -- Iovec
@@ -205,6 +208,18 @@ end
 
 function R_mt:stat()
 	return _.fstat(self.no)
+end
+
+
+function R_mt:crc32c()
+	local crc = 0ULL
+	while true do
+		local err, n = self:read(tmp_buf, tmp_buf_size)
+		if err then return err end
+		crc = C.sp_crc32c(crc, tmp_buf, n)
+		if n < tmp_buf_size then break end
+	end
+	return nil, tonumber(crc)
 end
 
 
