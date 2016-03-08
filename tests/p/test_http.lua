@@ -388,7 +388,7 @@ return {
 		local err, res = c:get("/")
 		local err, res = res:recv()
 		assert.equal(res.code, 404)
-		assert.equal(res.body:tostring(), "Not Found\n")
+		assert.equal(res.body:tostring(), "Not Found")
 
 		local filename = debug.getinfo(1, 'S').source:sub(2)
 		local err, res = c:get(filename)

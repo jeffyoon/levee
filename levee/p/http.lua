@@ -649,18 +649,61 @@ local Request_mt = {}
 Request_mt.__index = Request_mt
 
 
-function Request_mt:sendfile(name)
+--[[
+TODO: Proposed API
+	request:respond(404)
+	request:respond(404, { ["X-Stuff"] = "wee" })
+	request:respond(200, { ["Content-Type"] = "text/plain" }, "Hello")
+	request:respond(200, "Hello") (?)
+
+	body = request:respond(200, { ["Content-Type"] = "text/plain" }, 5)
+	body:write("Hello")
+
+	body = request:respond_chunked(200, {
+		["Content-Type"] = "text/plain",
+		Trailer = "X-Thing, Content-MD5" -- should this be an array?
+	})
+	body:chunk("Hello")
+	sub = body:chunk(5)
+	sub:write("World")
+	body:chunk({ ["X-Thing"] = "value", ["Content-MD5"] = "..." })
+	body:close()
+--]]
+
+
+function Request_mt:_finish_status(status, headers)
+	headers = headers or {}
+	if not headers["Content-Type"] then
+		headers["Content-Type"] = "text/plain"
+	end
+	if type(status) == "number" then
+		status = Status(status)
+	end
+	self.response:send({status, headers, status.reason})
+end
+
+
+function Request_mt:sendfile(name, options)
 	local err, r = self.hub.io:open(name)
 	if err then
-		self.response:send({Status(404), {}, "Not Found\n"})
+		self:_finish_status(404)
 		return
 	end
 
 	local err, st = r:stat()
 	if err or not st:is_reg() then
 		r:close()
-		self.response:send({Status(404), {}, "Not Found\n"})
+		self:_finish_status(404)
 		return err or errors.system.EACCES
+	end
+
+	local off = options and options.offset or 0
+	local len = options and options.length or (st.st_size - off)
+
+	if len > st.st_size - (off or 0) then
+		r:close()
+		self:_finish_status(416)
+		return err or errors.system.EINVAL
 	end
 
 	self.response:send({Status(200), {}, st.st_size})
