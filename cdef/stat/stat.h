@@ -31,9 +31,9 @@ struct levee_stat {
 	long long           st_size;      /* Size of file, in bytes.  */
 	// int                 st_blksize;   /* Optimal block size for I/O.  */
 	// long long           st_blocks;    /* Number 512-byte blocks allocated. */
-	// struct timespec     st_atime;     /* Time of last access.  */
-	// struct timespec     st_mtime;     /* Time of last modification.  */
-	// struct timespec     st_ctime;     /* Time of last status change.  */
+	struct timeval      atime;        /* Time of last access.  */
+	struct timeval      mtime;        /* Time of last modification.  */
+	struct timeval      ctime;        /* Time of last status change.  */
 };
 
 int levee_fstat(int fd, struct levee_stat *buf);

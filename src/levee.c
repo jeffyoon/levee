@@ -462,6 +462,28 @@ levee_print_stack (Levee *self, const char *msg)
 	fprintf (stderr, "\n");  /* end the listing */
 }
 
+static inline void
+copy_stat (struct levee_stat *buf, struct stat *st)
+{
+	buf->st_size = st->st_size;
+	buf->st_mode = st->st_mode;
+#if defined(__APPLE__)
+	buf->atime.tv_sec = st->st_atimespec.tv_sec;
+	buf->atime.tv_usec = st->st_atimespec.tv_nsec / 1000;
+	buf->mtime.tv_sec = st->st_mtimespec.tv_sec;
+	buf->mtime.tv_usec = st->st_mtimespec.tv_nsec / 1000;
+	buf->ctime.tv_sec = st->st_ctimespec.tv_sec;
+	buf->ctime.tv_usec = st->st_ctimespec.tv_nsec / 1000;
+#else
+	buf->atime.tv_sec = st->st_atime;
+	buf->atime.tv_usec = 0;
+	buf->mtime.tv_sec = st->st_mtime;
+	buf->mtime.tv_usec = 0;
+	buf->ctime.tv_sec = st->st_ctime;
+	buf->ctime.tv_usec = 0;
+#endif
+}
+
 /*
  * wrapping [f]stat as it's a macro on most systems which can't be directly
  * called from ffi
@@ -474,9 +496,7 @@ levee_fstat (int fd, struct levee_stat *buf)
 
 	rc = fstat(fd, &st);
 	if (rc < 0) return rc;
-
-	buf->st_size = st.st_size;
-	buf->st_mode = st.st_mode;
+	copy_stat (buf, &st);
 	return rc;
 }
 
@@ -488,9 +508,7 @@ levee_stat (const char *path, struct levee_stat *buf)
 
 	rc = stat(path, &st);
 	if (rc < 0) return rc;
-
-	buf->st_size = st.st_size;
-	buf->st_mode = st.st_mode;
+	copy_stat (buf, &st);
 	return rc;
 }
 
