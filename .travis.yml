@@ -12,10 +12,10 @@ install:
   - ./.travis/install.${TRAVIS_OS_NAME}.sh
 
 before_script:
-  - ls -al ~/Library/Logs/DiagnosticReports
+  - ls -al ~/Library/Logs/DiagnosticReports || echo "womp"
 
 script:
   - levee test -v tests/
 
 after_script:
-  - ls -al ~/Library/Logs/DiagnosticReports
+  - ls -al ~/Library/Logs/DiagnosticReports || echo "womp"
