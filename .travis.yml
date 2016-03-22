@@ -18,8 +18,9 @@ script:
   - levee test -v tests/
 
 after_script:
-  - ls -al /Library/Logs/DiagnosticReports || echo "womp"
-  - ls -al /Library/Logs/DiagnosticReports || echo "womp"
-  - ls -al /Library/Logs/DiagnosticReports || echo "womp"
-  - ls -al /Library/Logs/DiagnosticReports || echo "womp"
-  - find / -name DiagnosticReports
+  - sleep 10
+  - ls -al ~/Library/Logs/DiagnosticReports || echo "womp"
+  - ls -al ~/Library/Logs/DiagnosticReports || echo "womp"
+  - ls -al ~/Library/Logs/DiagnosticReports || echo "womp"
+  - ls -al ~/Library/Logs/DiagnosticReports || echo "womp"
+  - ls -al ~/Library/Logs/DiagnosticReports || echo "womp"
