@@ -19,8 +19,4 @@ script:
 
 after_script:
   - sleep 10
-  - ls -al ~/Library/Logs/DiagnosticReports || echo "womp"
-  - ls -al ~/Library/Logs/DiagnosticReports || echo "womp"
-  - ls -al ~/Library/Logs/DiagnosticReports || echo "womp"
-  - ls -al ~/Library/Logs/DiagnosticReports || echo "womp"
-  - ls -al ~/Library/Logs/DiagnosticReports || echo "womp"
+  - for name in ~/Library/Logs/DiagnosticReports/* ; do echo $name; cat $name; done
