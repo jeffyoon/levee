@@ -1,4 +1,5 @@
 #include <signal.h>
+#include <stdlib.h>
 #include <sysexits.h>
 #include <err.h>
 
@@ -17,6 +18,13 @@ pmain (lua_State *L)
 	return 0;
 }
 
+
+void
+levee_atexit (void) {
+	levee_destroy (state);
+}
+
+
 int
 main (int argc, const char *argv[])
 {
@@ -24,6 +32,8 @@ main (int argc, const char *argv[])
 
 	state = levee_create ();
 	levee_set_arg (state, argc-1, argv+1);
+
+	atexit(levee_atexit);
 
 	int rc = 0;
 	if (!levee_runf (state, pmain, 0, false)) {
