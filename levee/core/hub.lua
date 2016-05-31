@@ -10,6 +10,9 @@ local d = require("levee.d")
 local message = require("levee.core.message")
 
 
+local log = _.log.Log("levee.core.hub")
+
+
 local State_mt = {}
 State_mt.__index = State_mt
 
@@ -129,18 +132,13 @@ end
 
 
 function Hub_mt:_coresume(co, err, sender, value)
-	local target
 	if co ~= self._pcoro then
-		local status
-		status, target, err, sender, value = coroutine.resume(co, err, sender, value)
+		local status, target = coroutine.resume(co, err, sender, value)
 		if not status then
-			error(debug.traceback(co) .. "\n\n" .. target)
+			log:fatal(debug.traceback(co) .. "\n\n" .. target)
 		end
 	else
-		target, err, sender, value = coroutine.yield(err, sender, value)
-	end
-	if target then
-		self:_coresume(target, err, sender, value)
+		coroutine.yield(err, sender, value)
 	end
 end
 
@@ -152,7 +150,7 @@ function Hub_mt:_coyield(co, err, sender, value)
 	local status, err, sender, value = coroutine.resume(
 		self.loop, co, err, sender, value)
 	if not status then
-		error(("%s\n\n%s"):format(debug.traceback(self.loop), err))
+		log:fatal(("%s\n\n%s"):format(debug.traceback(self.loop), err))
 	end
 	return err, sender, value
 end
@@ -200,12 +198,6 @@ end
 function Hub_mt:continue()
 	self.ready:push({coroutine.running()})
 	self:_coyield()
-end
-
-
-function Hub_mt:switch_to(co, err, sender, value)
-	self.ready:push({coroutine.running()})
-	self:_coyield(co, err, sender, value)
 end
 
 
@@ -338,7 +330,14 @@ local function Hub()
 	self.closing = {}
 
 	self._pcoro = coroutine.running()
-	self.loop = coroutine.create(function() self:main() end)
+	self.loop = coroutine.create(function()
+		local status, err = xpcall(
+			function() return self:main() end,
+			function(err) return debug.traceback() .. "\n\n" .. err end)
+		if not status then
+			log:fatal(err .. "\n\nmain loop crashed")
+		end
+	end)
 
 	self.io = require("levee.core.io")(self)
 	self.signal = require("levee.core.signal")(self)

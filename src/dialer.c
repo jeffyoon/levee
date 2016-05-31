@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <signal.h>
 #include <stdio.h>
 #include <netdb.h>
 #include <string.h>
@@ -19,10 +20,14 @@ struct LeveeDialerState levee_dialer_state;
 
 void *
 levee_dialer_loop () {
+	sigset_t set;
+	sigfillset (&set);
+	pthread_sigmask (SIG_SETMASK, &set, NULL);
+
 	int rc;
 
 	struct LeveeDialerRequest req;
-	int err;
+	int err = 0;
 	int no;
 	int res;
 
@@ -75,8 +80,9 @@ levee_dialer_loop () {
 			res = no;
 		}
 
-		respond:
 		freeaddrinfo (info);
+
+		respond:
 		rc = write (req.no, &res, sizeof (res));
 		assert (rc == sizeof (res));
 	}

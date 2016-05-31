@@ -5,12 +5,15 @@
 
 local time = require("levee._.time")
 
+local PID = (" %5d "):format(C.getpid())
 
 local LEVELS = {
+	TRACE = 0,
 	DEBUG = 10,
 	INFO = 20,
 	WARN = 30,
 	ERROR = 40,
+	FATAL = 50,
 }
 
 
@@ -19,10 +22,9 @@ Log_mt.__index = Log_mt
 
 
 function Log_mt:__log(lvl, f, ...)
-	io.write(("%-5s"):format(lvl))
-	io.write(" ")
+	io.write(("%-5s "):format(lvl))
 	io.write(time.now():localdate():iso8601())
-	io.write(" ")
+	io.write(PID)
 	io.write(("%-21s"):format(self.name:sub(1,20)))
 	io.write(f:format(...))
 	io.write("\n")
@@ -34,6 +36,11 @@ function Log_mt:log(lvl, f, ...)
 	if LEVELS[lvl] >= self.lvl then
 		self:__log(lvl, f, ...)
 	end
+end
+
+
+function Log_mt:trace(...)
+	return self:log("TRACE", ...)
 end
 
 
@@ -57,14 +64,28 @@ function Log_mt:error(...)
 end
 
 
-return {
-	Log = function(name)
-		return setmetatable({name=name, lvl=LEVELS["INFO"]}, Log_mt)
-	end,
+function Log_mt:fatal(...)
+	self:log("FATAL", ...)
+	os.exit(1)
+end
 
-	patch = function(f)
-		local ret = Log_mt.__log
-		Log_mt.__log = f
-		return ret
-	end,
-}
+
+local M = {}
+
+
+M.default_level = LEVELS["INFO"]
+
+
+M.Log = function(name)
+	return setmetatable({name=name, lvl=M.default_level}, Log_mt)
+end
+
+
+M.patch = function(f)
+	local ret = Log_mt.__log
+	Log_mt.__log = f
+	return ret
+end
+
+
+return M

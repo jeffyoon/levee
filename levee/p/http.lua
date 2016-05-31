@@ -6,6 +6,7 @@ local _ = require("levee._")
 local d = require("levee.d")
 local json = require("levee.p.json")
 local meta = require("levee.meta")
+local Buffer = require("levee.d.buffer")
 
 
 local VERSION = "HTTP/1.1"
@@ -13,6 +14,9 @@ local FIELD_SEP = ": "
 local EOL = "\r\n"
 
 local USER_AGENT = ("%s/%s"):format(meta.name, meta.version.string)
+
+local tmp_iov = ffi.new("struct iovec[1]")
+local tmp_buf = Buffer()
 
 
 --
@@ -214,13 +218,13 @@ end
 
 
 function Parser_mt:init_request(config)
-	C.sp_http_init_request(self)
+	C.sp_http_init_request(self, false)
 	self:config(config)
 end
 
 
 function Parser_mt:init_response(config)
-	C.sp_http_init_response(self)
+	C.sp_http_init_response(self, false)
 	self:config(config)
 end
 
@@ -372,6 +376,89 @@ end
 
 
 --
+-- Map
+-- TODO: redo the scatter/scatter_count interface
+
+
+local Map_mt = {}
+
+
+function Map_mt:__tostring()
+	local n = C.sp_http_map_encode_size(self)
+	tmp_buf:ensure(n)
+	local buf = tmp_buf:tail()
+	C.sp_http_map_encode(self, buf)
+	tmp_buf:bump(n)
+	return tmp_buf:take(n)
+end
+
+
+local function map_add(self, name, value)
+	C.sp_http_map_put(self, name, #name, value, #value)
+end
+
+
+local function map_value(entry, idx)
+	if C.sp_http_entry_value(entry, idx-1, tmp_iov) then
+		return ffi.string(tmp_iov[0].iov_base, tmp_iov[0].iov_len)
+	end
+end
+
+
+local function map_writeinto_iovec(self, iov)
+	local n = C.sp_http_map_scatter_count(self)
+	iov:ensure(n)
+	C.sp_http_map_scatter(self, iov.iov + iov.n)
+	iov:bump(n, C.sp_http_map_encode_size(self))
+end
+
+
+function Map_mt:__index(key)
+	if key == "add" then return map_add end
+	if key == "writeinto_iovec" then return map_writeinto_iovec end
+
+	local e = C.sp_http_map_get(self, key, #key)
+	local n = C.sp_http_entry_count(e)
+	if n == 1 then
+		return map_value(e, 1)
+	elseif n > 1 then
+		local list = {}
+		for i=1,tonumber(n) do
+			list[i] = map_value(e, i)
+		end
+		return list
+	end
+end
+
+
+function Map_mt:__newindex(key, val)
+	C.sp_http_map_del(self, key, #key)
+	if type(val) == "table" then
+		for _,v in ipairs(val) do
+			map_add(self, key, v)
+		end
+	elseif val then
+		map_add(self, key, val)
+	end
+end
+
+
+local function Map(t)
+	local m = ffi.gc(C.sp_http_map_new(), C.sp_http_map_free)
+	if t then
+		for k,v in pairs(t) do
+			m:set(k, v)
+		end
+	end
+	return m
+end
+
+
+ffi.metatype("SpHttpMap", Map_mt)
+
+
+
+--
 -- Client
 
 local Client_mt = {}
@@ -495,8 +582,10 @@ end
 
 function Client_mt:reader(responses)
 	for response in responses do
-		local err, value
+		local request = self.response_to_request[response]
+		self.response_to_request[response] = nil
 
+		local err, value
 		err, value = self.parser:stream_next(self.stream)
 		if err then goto __cleanup end
 		assert(self.parser.type == C.SP_HTTP_RESPONSE)
@@ -524,45 +613,52 @@ function Client_mt:reader(responses)
 			end
 		end
 
-		if not value[2] then
-			-- content-length
-			local len = tonumber(value[3])
-			if len > 0 then res.body = self.stream:chunk(len) end
+		-- handle body
+		if request.method == "HEAD" then
 			response:send(res)
-			if len > 0 then res.body.done:recv() end
+			self.parser:reset()
 
 		else
-			-- chunked tranfer
-			local chunks
-			chunks, res.chunks = self.hub:pipe()
-			response:send(res)
+			if not value[2] then
+				-- content-length
+				local len = tonumber(value[3])
+				if len > 0 then res.body = self.stream:chunk(len) end
+				response:send(res)
+				if len > 0 then res.body.done:recv() end
 
-			while true do
+			else
+				-- chunked tranfer
+				local chunks
+				chunks, res.chunks = self.hub:pipe()
+				response:send(res)
+
+				while true do
+					err, value = self.parser:stream_next(self.stream)
+					if err then goto __cleanup end
+					if not value[1] then break end
+
+					local len = tonumber(value[2])
+
+					if self.stream.buf.sav > 0 then
+						len = len + self.stream.buf.sav
+						self.stream.buf:thaw()
+					end
+
+					local chunk = self.stream:chunk(len)
+					chunks:send(chunk)
+					-- TODO: still need to package this up better
+					chunk.done:recv()
+					if chunk.len > 0 then
+						chunk:readin(chunk.len)
+						self.stream.buf:freeze(chunk.len)
+					end
+				end
 				err, value = self.parser:stream_next(self.stream)
 				if err then goto __cleanup end
-				if not value[1] then break end
-
-				local len = tonumber(value[2])
-
-				if self.stream.buf.sav > 0 then
-					len = len + self.stream.buf.sav
-					self.stream.buf:thaw()
-				end
-
-				local chunk = self.stream:chunk(len)
-				chunks:send(chunk)
-				-- TODO: still need to package this up better
-				chunk.done:recv()
-				if chunk.len > 0 then
-					chunk:readin(chunk.len)
-					self.stream.buf:freeze(chunk.len)
-				end
+				-- TODO: trailing headers
+				assert(not value[1])
+				chunks:close()
 			end
-			err, value = self.parser:stream_next(self.stream)
-			if err then goto __cleanup end
-			-- TODO: trailing headers
-			assert(not value[1])
-			chunks:close()
 		end
 	end
 
@@ -625,6 +721,8 @@ function Client_mt:request(method, path, params, headers, data)
 	end
 
 	local sender, recver = self.hub:pipe()
+	local request = {method=method}
+	self.response_to_request[sender] = request
 	self.responses:send(sender)
 	return nil, recver
 end
@@ -710,7 +808,7 @@ function Server_mt:__call()
 end
 
 
-function Server_mt:_response(response)
+function Server_mt:_response(request, response)
 	local err, value = response:recv()
 	if err then return err end
 	local status, headers, body = unpack(value)
@@ -746,8 +844,8 @@ function Server_mt:_response(response)
 	end
 	self.conn:send(EOL)
 
-	if no_content then
-		return self.conn:send()
+	if no_content or request.method == "HEAD" then
+		return
 	end
 	if type(body) == "string" then
 		return self.conn:send(body)
@@ -781,10 +879,13 @@ function Server_mt:_response(response)
 end
 
 
-function Server_mt:writer(responses)
+function Server_mt:writer(responses, response_to_request)
 	for response in responses do
-		local err = self:_response(response)
+		local request = response_to_request[response]
+		response_to_request[response] = nil
+		local err = self:_response(request, response)
 		response:close()
+		self.parser:reset()
 		if err then
 			self:close()
 			return
@@ -793,7 +894,7 @@ function Server_mt:writer(responses)
 end
 
 
-function Server_mt:reader(requests, responses)
+function Server_mt:reader(requests, responses, response_to_request)
 	while true do
 		local err, value
 
@@ -831,6 +932,7 @@ function Server_mt:reader(requests, responses)
 
 		local len = tonumber(value[3])
 		if len > 0 then req.body = self.stream:chunk(len) end
+		response_to_request[res_recver] = req
 		requests:send(req)
 		responses:send(res_recver)
 		if len > 0 then req.body.done:recv() end
@@ -864,8 +966,9 @@ local function Server(hub, conn, config)
 	local res_sender, res_recver = hub:pipe()
 	self.requests = req_recver
 
-	hub:spawn(function() self:reader(req_sender, res_sender) end)
-	hub:spawn(function() self:writer(res_recver) end)
+	local response_to_request = {}
+	hub:spawn(function() self:reader(req_sender, res_sender, response_to_request) end)
+	hub:spawn(function() self:writer(res_recver, response_to_request) end)
 
 	return self
 end
@@ -946,6 +1049,7 @@ function HTTP_mt:connect(port, host, config)
 	m.stream = m.conn:stream()
 	m.parser = parser.Response(config)
 
+	m.response_to_request = {}
 	local res_sender, res_recver = self.hub:pipe()
 	self.hub:spawn(function() m:reader(res_recver) end)
 	m.responses = res_sender
@@ -983,6 +1087,7 @@ M_mt.__index = M_mt
 
 
 M_mt.parser = parser
+M_mt.Map = Map
 
 
 function M_mt.__call(self, hub)

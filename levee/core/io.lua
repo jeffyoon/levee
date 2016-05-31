@@ -13,55 +13,6 @@ local MIN_SPLICE_SIZE = 4 * _.pagesize
 
 
 --
--- Iovec
-
-local iovec = ffi.typeof("struct iovec[?]")
-
-
-local Iovec_mt = {}
-Iovec_mt.__index = Iovec_mt
-
-
-function Iovec_mt:write(buf, len)
-	assert(self.n < self.size)
-
-	if not len then
-		len = #buf
-	end
-
-	if len == 0 then
-		return nil, 0
-	end
-
-	if type(buf) == "string" then
-		buf = ffi.cast("char*", buf)
-	end
-
-	self.iov[self.n].iov_base = buf
-	self.iov[self.n].iov_len = len
-
-	self.len = self.len + len
-	self.n = self.n + 1
-end
-
-
-function Iovec_mt:reset()
-	self.n = 0
-	self.len = 0
-end
-
-
-local function Iovec(size)
-	local self = setmetatable({
-		iov = iovec(size),
-		n = 0,
-		len = 0,
-		size = size, }, Iovec_mt)
-	return self
-end
-
-
---
 -- Read
 --
 local R_mt = {}
@@ -305,7 +256,7 @@ function W_mt:iov(size)
 		self.empty = q.empty
 
 		self.hub:spawn(function()
-			local iov = Iovec(size)
+			local iov = d.Iovec(size)
 
 			while true do
 				local err = q:recv()
@@ -313,16 +264,12 @@ function W_mt:iov(size)
 
 				local num = #q
 				for s in q:iter() do
-					-- TODO - eep
-					if s.value then
-						iov:write(s:value())
-					else
-						iov:write(s)
-					end
+					iov:write(s)
 				end
 
-				local err, n = self:writev(iov.iov, iov.n)
+				local err, n = self:writev(iov:value())
 				if err then
+					q.fifo:remove(#q.fifo)   -- this should be handled in stalk
 					self:close()
 					return
 				end
@@ -338,6 +285,10 @@ end
 
 
 function W_mt:send(...)
+	if self.closed then
+		return errors.CLOSED
+	end
+
 	local err, iov = self:iov()
 	if err then return err end
 	local arg = {...}
@@ -354,7 +305,10 @@ function W_mt:close()
 	end
 
 	self.closed = true
-	if self.iovec then self.iovec:close() end
+	if self.iovec then
+		self.iovec:close()
+		self.iovec.empty:send(true)
+	end
 	self.hub:unregister(self.no, false, true)
 	self.hub:continue()
 	return
@@ -388,6 +342,10 @@ function RW_mt:close()
 	end
 
 	self.closed = true
+	if self.iovec then
+		self.iovec:close()
+		self.iovec.empty:send(true)
+	end
 	self.hub:unregister(self.no, true, true)
 	self.hub:continue()
 	return true
@@ -423,10 +381,10 @@ end
 
 
 function Stream_mt:readn(buf, n, len)
+	len = len or n
 	local read = self.buf:move(buf, n)
-
 	if read < n then
-		local err, more = self.conn:readn(buf + read, n - read, len)
+		local err, more = self.conn:readn(buf + read, n - read, len - read)
 		if err then return err end
 		read = read + more
 	end
@@ -579,15 +537,15 @@ end
 --
 -- Splice
 
-function Chunk_mt:_splice(conn)
+function Chunk_mt:_splice(target)
 	local n = self.len
 
 	while self.len > 0 do
 		local err = self:readin(1)
 		if err then return err end
-		local err, n = conn:write(self:value())
-		if err then return err end
+		local err = target:write(self:value())
 		self:trim()
+		if err then return err end
 	end
 
 	return nil, n
@@ -602,14 +560,11 @@ function Chunk_mt:_splice_0copy(target)
 		return self:_splice(target)
 	end
 
-	local remain = self.len
-
 	-- transfer any pending bytes from the buffer
 	if buflen > 0 then
 		local err = target:write(buf, buflen)
 		if err then return err end
 		self:trim()
-		remain = remain - buflen
 	end
 
 	local r, w = self.hub.io:pipe()
@@ -625,24 +580,28 @@ function Chunk_mt:_splice_0copy(target)
 		r.r_ev:set(...)
 	end
 
-	while remain > 0 do
-		local err, rn = source:_splice(w, remain)
-		if err then return err end
+	local err, rn, wn
+	while self.len > 0 do
+		err, rn = source:_splice(w, self.len)
+		if err then goto cleanup end
+
+		self.len = self.len - rn
 
 		while rn > 0 do
-			local err, wn = r:_splice(target, remain)
-			if err then return err end
+			err, wn = r:_splice(target, rn)
+			if err then goto cleanup end
 			rn = rn - wn
-			remain = remain - wn
 		end
 	end
 
+	::cleanup::
 	-- restore target and temp w's w_ev
 	target.w_ev.set = target_w_ev_set
 	w.w_ev.set = target_w_ev_set
-
 	r:close()
 	w:close()
+
+	if err then return err end
 
 	self.len = 0
 	self.done:close()
@@ -956,7 +915,7 @@ function IO_mt:open(name, ...)
 end
 
 
-IO_mt.iovec = Iovec
+IO_mt.iovec = d.Iovec
 IO_mt.R_mt = R_mt
 
 

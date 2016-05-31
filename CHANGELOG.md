@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.3.3-alpha
+## 0.3.4-alpha
+
+* fix bug in stream:readn that could allow data to be over read
+
+## 0.3.3 - 2016-05-21
 
 * default pdeathsig to TERM. allow the signal to be configurable
 * clear sigmask when spawning threads on Linux
@@ -19,6 +23,13 @@
 * background thread to run getaddrinfo reworked to not require a lua state. the
   same background thread is now shared by all other levee threads in a single
   process.
+* fix msgpack decode via siphon
+* fix timeout when recv-ing from a thread channel
+* wrap main event loop with an xpcall to capture a traceback if it should
+  unexpectedly crash
+* refactor iovec
+* improve handling of HEAD HTTP requests
+* add ability to specify more than one path to the test command
 
 ## 0.3.2 - 2016-02-24
 

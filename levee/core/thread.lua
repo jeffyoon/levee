@@ -68,13 +68,13 @@ function Recver_mt:pump(node)
 end
 
 
-function Recver_mt:recv()
-	return self.queue:recv()
+function Recver_mt:recv(ms)
+	return self.queue:recv(ms)
 end
 
 
 function Recver_mt:__call()
-	return self.queue:recv()
+	return self.queue()
 end
 
 
@@ -228,8 +228,8 @@ end
 
 
 local function Channel(hub)
-	local chan = ffi.new('LeveeChan *[1]')
-	if C.levee_chan_create(chan, hub.poller.fd) < 0 then
+	local chan = C.levee_chan_create(hub.poller.fd)
+	if chan == nil then
 		error("levee_chan_create")
 	end
 	ffi.gc(chan, C.levee_chan_unref)

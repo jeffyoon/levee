@@ -11,7 +11,7 @@ Buffer_mt.__index = Buffer_mt
 
 function Buffer_mt:__tostring()
 	return string.format(
-		"levee.Buffer: sav=%u, off=%u, len=%u, cap=%u",
+		"levee.d.Buffer: sav=%u, off=%u, len=%u, cap=%u",
 		self.sav, self.off, self.len, self.cap)
 end
 
@@ -187,6 +187,11 @@ function Buffer_mt:push(s)
 	self:ensure(#s)
 	ffi.copy(self:tail(), s)
 	self:bump(#s)
+end
+
+
+function Buffer_mt:writeinto_iovec(iov)
+	iov:writeraw(self:value())
 end
 
 

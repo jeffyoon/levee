@@ -315,6 +315,45 @@ return {
 		assert(not h:in_use())
 	end,
 
+	test_head = function()
+		local levee = require("levee")
+
+		local h = levee.Hub()
+
+		local err, serve = h.http:listen()
+		local err, addr = serve:addr()
+
+		local err, c = h.http:connect(addr:port())
+		local err, s = serve:recv()
+
+		-- repeat to ensure nothing gets blocked
+		for __ = 1, 10 do
+			local err, res = c:head("/foo")
+			local err, req = s:recv()
+			req.response:send({levee.HTTPStatus(200), {}, "1234567890"})
+			local err, res = res:recv()
+			assert.equal(res.headers["Content-Length"], "10")
+
+			local err, res = c:head("/foo")
+			local err, req = s:recv()
+			req.response:send({levee.HTTPStatus(200), {}, 10})
+			local err, res = res:recv()
+			assert.equal(res.headers["Content-Length"], "10")
+
+			local err, res = c:head("/foo")
+			local err, req = s:recv()
+			req.response:send({levee.HTTPStatus(200), {}, nil})
+			local err, res = res:recv()
+			assert.equal(res.headers["Transfer-Encoding"], "chunked")
+		end
+
+		assert(not next(c.response_to_request))
+
+		c:close()
+		serve:close()
+		assert(not h:in_use())
+	end,
+
 	test_proxy = function()
 		local levee = require("levee")
 
@@ -645,5 +684,28 @@ return {
 		len = len - rc
 
 		assert.equal(ffi.string(buf, len), "Hello World!\n")
-	end
+	end,
+
+	test_map = function()
+		local Map = require("levee.p.http").Map
+		local Iovec = require("levee.d.iovec")
+
+		local map = Map()
+
+		assert.same(map["test"], nil)
+		map:add("Test", "value 1")
+		assert.same(map["test"], "value 1")
+		map:add("TEST", "value 2")
+		assert.same(map["test"], { "value 1", "value 2" })
+		map["Test"] = { "stuff", "things" }
+		assert.same(map["test"], { "stuff", "things" })
+		map["Other"] = "value"
+
+		local iov = Iovec()
+		iov:write(map)
+
+		assert.equal(tostring(map), iov:string())
+		assert.equal(#iov, 41)
+		assert.equal(iov.n, 12)
+	end,
 }

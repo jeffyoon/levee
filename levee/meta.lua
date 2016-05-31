@@ -2,8 +2,8 @@ local Version = require("levee._.version")
 
 local date = {
 	year = 2016,
-	month = 2,
-	day = 24,
+	month = 5,
+	day = 21,
 }
 
 date.string = string.format(
@@ -14,7 +14,7 @@ date.string = string.format(
 local version = Version{
 	major = 0,
 	minor = 3,
-	patch = 3,
+	patch = 4,
 	pre_release_name = "alpha",
 	pre_release_version = 1,
 }
