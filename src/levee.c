@@ -177,14 +177,16 @@ levee_create (void)
 }
 
 static void
-destroy (Levee *self)
+destroy (Levee **in)
 {
+	Levee *self = *in;
 	if (self->L) {
 		lua_close (self->L);
 		self->L = NULL;
 	}
 	free (self->last_error);
 	free (self);
+	*in = NULL;
 }
 
 void
@@ -196,7 +198,7 @@ levee_destroy (Levee *self)
 	if (self->state != LEVEE_LOCAL) {
 		return;
 	}
-	destroy (self);
+	destroy (&self);
 }
 
 int
@@ -316,7 +318,7 @@ run (void *data)
 	if (lua_pcall (self->L, self->narg, 0, 0)) {
 		return false;
 	}
-	destroy (self);
+	destroy (&self);
 	return NULL;
 }
 
