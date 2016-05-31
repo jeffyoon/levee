@@ -7,6 +7,7 @@ set(CMAKE_C_FLAGS "-std=c99 -Wall -Wextra -Werror -pedantic -I${INCLUDE_DIR}")
 set(CMAKE_C_FLAGS_DEBUG "-g")
 set(CMAKE_C_FLAGS_RELEASE "-g -O2 -fomit-frame-pointer -march=native")
 
+include(cmake/Lmdb.cmake)
 include(cmake/Siphon.cmake)
 include(cmake/LuaJIT.cmake)
 
@@ -53,12 +54,12 @@ add_library(
 	${LEVEE_BUNDLE_OUTPUT}
 )
 set_target_properties(libleveebase PROPERTIES OUTPUT_NAME leveebase)
-add_dependencies(libleveebase libluajit libsiphon)
+add_dependencies(libleveebase libluajit libsiphon liblmdb)
 add_custom_target(
 	liblevee_target
-	COMMAND ${LEVEE_INC}/link.sh ${LEVEE_LIB} $<TARGET_FILE:libleveebase> ${LUAJIT_LIB} ${SIPHON_LIB}
+	COMMAND ${LEVEE_INC}/link.sh ${LEVEE_LIB} $<TARGET_FILE:libleveebase> ${LUAJIT_LIB} ${SIPHON_LIB} ${LMDB_LIB}
 )
-add_dependencies(liblevee_target libleveebase libluajit libsiphon)
+add_dependencies(liblevee_target libleveebase libluajit libsiphon liblmdb)
 
 include_directories(BEFORE
 	/usr/local/include

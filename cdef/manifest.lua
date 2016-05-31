@@ -69,6 +69,7 @@ local headers = {
 	include("siphon", "path"),
 	include("siphon", "map"),
 	include("siphon", "ring"),
+	include("lmdb", "lmdb"),
 	include("levee", "levee"),
 }
 
