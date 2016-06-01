@@ -368,6 +368,46 @@ levee_runf (Levee *self, lua_CFunction f, int nargs, bool bg)
 	return levee_run (self, nargs, bg);
 }
 
+static Levee *MAIN;
+
+static void
+cleanup (void)
+{
+	levee_destroy (MAIN);
+	MAIN = NULL;
+}
+
+static int
+pmain (lua_State *L)
+{
+	int n = levee_require (MAIN, luaL_checkstring (L, 1));
+	if (n > 0) {
+		lua_pop (L, n);
+	}
+	return 0;
+}
+
+void
+levee_run_main (int argc, const char *argv[], const char *entry)
+{
+	signal (SIGPIPE, SIG_IGN);
+
+	atexit (cleanup);
+
+	MAIN = levee_create ();
+	levee_set_arg (MAIN, argc-1, argv+1);
+
+	int rc = 0;
+	lua_pushstring (MAIN->L, entry);
+	if (!levee_runf (MAIN, pmain, 0, false)) {
+		levee_report_error (MAIN);
+		rc = EX_DATAERR;
+	}
+	levee_destroy (MAIN);
+	MAIN = NULL;
+	exit(rc);
+}
+
 void
 levee_push_number (Levee *self, double num)
 {

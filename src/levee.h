@@ -72,6 +72,9 @@ levee_run (Levee *self, int nargs, bool bg);
 extern bool
 levee_runf (Levee *self, lua_CFunction f, int nargs, bool bg);
 
+extern void __attribute__((noreturn))
+levee_run_main (int argc, const char *argv[], const char *entry);
+
 extern void
 levee_push_number (Levee *self, double num);
 
