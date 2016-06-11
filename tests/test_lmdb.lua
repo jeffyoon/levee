@@ -37,5 +37,6 @@ return {
 
 		env = nil
 		collectgarbage("collect")
+		assert.same(lmdb.REFS, {})
 	end,
 }

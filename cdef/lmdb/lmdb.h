@@ -135,6 +135,7 @@ int  mdb_txn_commit(MDB_txn *txn);
 void mdb_txn_abort(MDB_txn *txn);
 void mdb_txn_reset(MDB_txn *txn);
 int  mdb_txn_renew(MDB_txn *txn);
+MDB_env* mdb_txn_env(MDB_txn *txn);
 
 int  mdb_dbi_open(MDB_txn *txn, const char *name, unsigned int flags, MDB_dbi *dbi);
 int  mdb_stat(MDB_txn *txn, MDB_dbi dbi, MDB_stat *stat);

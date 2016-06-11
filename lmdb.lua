@@ -1,6 +1,14 @@
 local ffi = require "ffi"
 
 
+local REFS = {}
+
+
+local function castptr(cdata)
+	return tonumber(ffi.cast("uintptr_t", cdata))
+end
+
+
 local Val_mt = {}
 Val_mt.__index = Val_mt
 
@@ -75,9 +83,19 @@ function Txn_mt:open(name, flags)
 end
 
 
+function Txn_mt:env()
+	return C.mdb_txn_env(self.txn)
+end
+
+
+function Txn_mt:db()
+	return REFS[castptr(self:env())][0]
+end
+
+
 function Txn_mt:cursor()
 	local cursor = ffi.new("MDB_cursor *[1]");
-	local rc = C.mdb_cursor_open(self.txn, self.db, cursor)
+	local rc = C.mdb_cursor_open(self.txn, self:db(), cursor)
 	assert(rc == 0)
 	cursor = cursor[0]
 	if self.ro then
@@ -92,7 +110,7 @@ end
 function Txn_mt:put(key, value)
 	local key = MDBVal(#key, ffi.cast("void*", key))
 	local value = MDBVal(#value, ffi.cast("void*", value))
-	local rc = C.mdb_put(self.txn, self.db, key, value, 0)
+	local rc = C.mdb_put(self.txn, self:db(), key, value, 0)
 	assert(rc == 0)
 end
 
@@ -100,7 +118,7 @@ end
 function Txn_mt:get(key)
 	local key = MDBVal(#key, ffi.cast("void*", key))
 	local value = MDBVal()
-	local rc = C.mdb_get(self.txn, self.db, key, value)
+	local rc = C.mdb_get(self.txn, self:db(), key, value)
 	assert(rc == 0)
 	return value
 end
@@ -128,7 +146,6 @@ function Txn_mt:__gc() self:abort() end
 ffi.cdef([[
 typedef struct {
 	MDB_txn * txn;
-	MDB_dbi db;
 	int state;
 	bool ro;
 } LeveeMDB_txn;
@@ -165,7 +182,7 @@ Env_mt.__index = Env_mt
 
 function Env_mt:info()
 	local info = ffi.new("MDB_envinfo[1]")
-	C.mdb_env_info(self.env, info)
+	C.mdb_env_info(self, info)
 	info = info[0]
 	return {
 		map_addr = info.me_mapaddr,
@@ -195,10 +212,11 @@ end
 
 
 function Env_mt:txn(options)
-	local txn = Txn(self.env, options)
-	if self.db then txn.db = self.db end
-	return txn
+	return Txn(self, options)
 end
+
+
+local MDBEnv = ffi.metatype("MDB_env", Env_mt)
 
 
 local function Env(path, options)
@@ -212,18 +230,21 @@ local function Env(path, options)
 
 	local rc = C.mdb_env_open(env, path, 0, tonumber(options.mode, 8))
 	assert(rc == 0)
-	ffi.gc(env, function(env) C.mdb_env_close(env) end)
 
-	local self = setmetatable({}, Env_mt)
-	self.env = env
+	ffi.gc(env, function(env)
+		REFS[castptr(env)] = nil
+		C.mdb_env_close(env)
+	end)
 
-	local txn = self:txn()
-	self.db = txn:open()
+	local txn = env:txn()
+	REFS[castptr(env)] = {[0] = txn:open()}
 	txn:commit()
-	return self
+
+	return env
 end
 
 
 return {
 	open = Env,
+	REFS = REFS,
 }
