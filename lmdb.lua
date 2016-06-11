@@ -15,7 +15,7 @@ function Val_mt:__tostring()
 end
 
 
-local __Val = ffi.metatype("MDB_val", Val_mt)
+local MDBVal = ffi.metatype("MDB_val", Val_mt)
 
 
 local Cursor_mt = {}
@@ -23,8 +23,8 @@ Cursor_mt.__index = Cursor_mt
 
 
 function Cursor_mt:get(op, key)
-	if not key then key = __Val() end
-	local value = __Val()
+	if not key then key = MDBVal() end
+	local value = MDBVal()
 	local rc = C.mdb_cursor_get(self, key, value, op)
 	if rc == C.MDB_NOTFOUND then return end
 	assert(rc == 0)
@@ -43,7 +43,7 @@ end
 
 
 function Cursor_mt:seek(key)
-	local key = __Val(#key, ffi.cast("void*", key))
+	local key = MDBVal(#key, ffi.cast("void*", key))
 	return self:get(C.MDB_SET_RANGE, key)
 end
 
@@ -53,7 +53,7 @@ function Cursor_mt:__call()
 end
 
 
-local __Cursor = ffi.metatype("MDB_cursor", Cursor_mt)
+local MDBCursor = ffi.metatype("MDB_cursor", Cursor_mt)
 
 
 local TXN_INITIAL = 0
@@ -90,16 +90,16 @@ end
 
 
 function Txn_mt:put(key, value)
-	local key = __Val(#key, ffi.cast("void*", key))
-	local value = __Val(#value, ffi.cast("void*", value))
+	local key = MDBVal(#key, ffi.cast("void*", key))
+	local value = MDBVal(#value, ffi.cast("void*", value))
 	local rc = C.mdb_put(self.txn, self.db, key, value, 0)
 	assert(rc == 0)
 end
 
 
 function Txn_mt:get(key)
-	local key = __Val(#key, ffi.cast("void*", key))
-	local value = __Val()
+	local key = MDBVal(#key, ffi.cast("void*", key))
+	local value = MDBVal()
 	local rc = C.mdb_get(self.txn, self.db, key, value)
 	assert(rc == 0)
 	return value
@@ -135,12 +135,12 @@ typedef struct {
 ]])
 
 
-local __Txn = ffi.metatype("LeveeMDB_txn", Txn_mt)
+local MDBTxn = ffi.metatype("LeveeMDB_txn", Txn_mt)
 
 
 local function Txn(env, options)
 	options = options or {}
-	local self = __Txn()
+	local self = MDBTxn()
 
 	local flags = 0
 	if options.read_only then
