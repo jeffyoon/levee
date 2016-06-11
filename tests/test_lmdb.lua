@@ -37,6 +37,28 @@ return {
 
 		env = nil
 		collectgarbage("collect")
+		collectgarbage("collect")
+		assert.same(lmdb.REFS, {})
+	end,
+
+	test_names = function()
+		local tmp = _.path.Path:tmpdir()
+		defer(function() tmp:remove(true) end)
+
+		local env = lmdb.open(tostring(tmp), {names={"user"}})
+
+		env:w(function(txn)
+			txn.user:put("tom", "bar")
+		end)
+
+		env:r(function(txn)
+			assert.equal(txn:get("tom"), nil)
+			assert.equal(txn.user:get("tom"):string(), "bar")
+		end)
+
+		env = nil
+		collectgarbage("collect")
+		collectgarbage("collect")
 		assert.same(lmdb.REFS, {})
 	end,
 }

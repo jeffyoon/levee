@@ -64,6 +64,28 @@ end
 local MDBCursor = ffi.metatype("MDB_cursor", Cursor_mt)
 
 
+local DB_mt = {}
+DB_mt.__index = DB_mt
+
+
+function DB_mt:put(key, value)
+	self.txn:put(key, value, self.dbi)
+end
+
+
+function DB_mt:get(key)
+	return self.txn:get(key, self.dbi)
+end
+
+
+local function DB(txn, dbi)
+	local self = setmetatable({}, DB_mt)
+	self.txn = txn
+	self.dbi = dbi
+	return self
+end
+
+
 local TXN_INITIAL = 0
 local TXN_DONE = 1
 local TXN_RESET = 2
@@ -71,11 +93,16 @@ local TXN_DIRTY = 3
 
 
 local Txn_mt = {}
-Txn_mt.__index = Txn_mt
+
+
+function Txn_mt:__index(name)
+	if Txn_mt[name] then return Txn_mt[name] end
+	return DB(self, self:dbi(name))
+end
 
 
 function Txn_mt:open(name, flags)
-	flags = 0
+	flags = flags or C.MDB_CREATE
 	local dbi = ffi.new("MDB_dbi[1]")
 	local rc = C.mdb_dbi_open(self.txn, name, flags, dbi)
 	assert(rc == 0)
@@ -88,14 +115,15 @@ function Txn_mt:env()
 end
 
 
-function Txn_mt:db()
-	return REFS[castptr(self:env())][0]
+function Txn_mt:dbi(name)
+	name = name or 0
+	return REFS[castptr(self:env())][name]
 end
 
 
 function Txn_mt:cursor()
 	local cursor = ffi.new("MDB_cursor *[1]");
-	local rc = C.mdb_cursor_open(self.txn, self:db(), cursor)
+	local rc = C.mdb_cursor_open(self.txn, self:dbi(), cursor)
 	assert(rc == 0)
 	cursor = cursor[0]
 	if self.ro then
@@ -107,18 +135,21 @@ function Txn_mt:cursor()
 end
 
 
-function Txn_mt:put(key, value)
+function Txn_mt:put(key, value, dbi)
+	dbi = dbi or self:dbi()
 	local key = MDBVal(#key, ffi.cast("void*", key))
 	local value = MDBVal(#value, ffi.cast("void*", value))
-	local rc = C.mdb_put(self.txn, self:db(), key, value, 0)
+	local rc = C.mdb_put(self.txn, dbi, key, value, 0)
 	assert(rc == 0)
 end
 
 
-function Txn_mt:get(key)
+function Txn_mt:get(key, dbi)
+	dbi = dbi or self:dbi()
 	local key = MDBVal(#key, ffi.cast("void*", key))
 	local value = MDBVal()
-	local rc = C.mdb_get(self.txn, self:db(), key, value)
+	local rc = C.mdb_get(self.txn, dbi, key, value)
+	if rc == C.MDB_NOTFOUND then return end
 	assert(rc == 0)
 	return value
 end
@@ -223,12 +254,19 @@ local function Env(path, options)
 	options = options or {}
 	options.mode = options.mode or 0644
 
+	local rc
+
 	local env = ffi.new("MDB_env *[1]")
 	local rc = C.mdb_env_create(env)
 	assert(rc == 0)
 	env = env[0]
 
-	local rc = C.mdb_env_open(env, path, 0, tonumber(options.mode, 8))
+	if options.names then
+		rc = C.mdb_env_set_maxdbs(env, #options.names)
+		assert(rc == 0)
+	end
+
+	rc = C.mdb_env_open(env, path, 0, tonumber(options.mode, 8))
 	assert(rc == 0)
 
 	ffi.gc(env, function(env)
@@ -238,6 +276,11 @@ local function Env(path, options)
 
 	local txn = env:txn()
 	REFS[castptr(env)] = {[0] = txn:open()}
+	if options.names then
+		for __, name in ipairs(options.names) do
+			REFS[castptr(env)][name] = txn:open(name)
+		end
+	end
 	txn:commit()
 
 	return env
