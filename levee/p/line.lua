@@ -1,6 +1,7 @@
 local ffi = require("ffi")
 
 local errors = require("levee.errors")
+local d = require("levee.d")
 
 
 local Parser_mt = {}
@@ -19,9 +20,10 @@ function Parser_mt:next(stream)
 	if rc < 0 then return errors.get(rc) end
 
 	if rc > 0 then
-		local line = ffi.string(buf, rc - 1)
+		local buf = C.malloc(rc - 1)
+		stream.buf:copy(buf, rc - 1)
 		stream:trim(rc)
-		return nil, line
+		return nil, d.Data(buf, rc - 1)
 	end
 
 	local err = stream:readin()
