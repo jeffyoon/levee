@@ -22,6 +22,10 @@ R_mt.__index = R_mt
 function R_mt:read(buf, len)
 	if self.closed then return errors.CLOSED end
 
+	local err, sender, ev = self.r_ev:recv(self.timeout)
+	if err then return err end
+	if ev < 0 then self.r_error = true end
+
 	local err, n = _.read(self.no, buf, len)
 
 	if not err and n > 0 then return nil, n end
@@ -30,9 +34,6 @@ function R_mt:read(buf, len)
 		return errors.CLOSED
 	end
 
-	local err, sender, ev = self.r_ev:recv(self.timeout)
-	if err then return err end
-	if ev < 0 then self.r_error = true end
 	return self:read(buf, len)
 end
 
