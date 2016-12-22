@@ -25,7 +25,7 @@ function R_mt:read(buf, len)
 	local err, n = _.read(self.no, buf, len)
 
 	if not err and n > 0 then return nil, n end
-	if (err and not err.is_system_EAGAIN) or self.r_error or n == 0 then
+	if (err and err ~= errors.system.EAGAIN) or self.r_error or n == 0 then
 		self:close()
 		return errors.CLOSED
 	end
@@ -88,7 +88,7 @@ function R_mt:sendfile(to, len, off)
 
 	while remain > 0 do
 		local err, n = _.sendfile(self.no, to.no, remain, off)
-		if err and not err.is_system_EAGAIN then return err end
+		if err and err ~= errors.system.EAGAIN then return err end
 		if err or n < 0 then n = 0 end
 
 		off = off + n
@@ -109,7 +109,7 @@ if _.splice then
 		local err, n = _.splice(self.no, to.no, len)
 
 		if not err and n > 0 then return nil, n end
-		if (err and not err.is_system_EAGAIN) or self.r_error or n == 0 then
+		if (err and err ~= errors.system.EAGAIN) or self.r_error or n == 0 then
 			self:close()
 			return errors.CLOSED
 		end
@@ -129,7 +129,7 @@ if _.tee then
 		local err, n = _.tee(self.no, to.no, len)
 
 		if not err and n > 0 then return nil, n end
-		if (err and not err.is_system_EAGAIN) or self.r_error or n == 0 then
+		if (err and err ~= errors.system.EAGAIN) or self.r_error or n == 0 then
 			self:close()
 			return errors.CLOSED
 		end
@@ -188,7 +188,7 @@ function W_mt:write(buf, len)
 	while true do
 		local err, n = _.write(self.no, buf + sent, len - sent)
 
-		if err and not err.is_system_EAGAIN then
+		if err and err ~= errors.system.EAGAIN then
 			self:close()
 			return err
 		end
@@ -219,7 +219,7 @@ function W_mt:writev(iov, n)
 			len = C.writev(self.no, iov[i], n - i)
 			if len > 0 then break end
 			local err = errors.get(ffi.errno())
-			if not err.is_system_EAGAIN then
+			if err ~= errors.system.EAGAIN then
 				self:close()
 				return err
 			end
