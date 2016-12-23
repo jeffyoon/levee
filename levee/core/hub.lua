@@ -399,7 +399,7 @@ end
 
 local function EVStub()
 	return {
-		recv = function() return 1 end,
+		recv = function() return nil, nil, 1 end,
 		set = function() end,
 	}
 end
