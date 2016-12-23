@@ -53,6 +53,11 @@ function Iovec_mt:write(val, len)
 	self:writeraw(val, len)
 end
 
+function Iovec_mt:write_list(val)
+	for __, item in ipairs(val) do
+		self:write(item)
+	end
+end
 
 function Iovec_mt:writeraw(val, len)
 	if self.n == self.size then

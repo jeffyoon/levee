@@ -96,4 +96,15 @@ return {
 
 		assert.equal(#iov, 11)
 	end,
+
+	test_write_list = function()
+		local iov = Iovec()
+		iov:write("The")
+		iov:write_list({"J", "Man"})
+		local i, n = iov:value()
+		assert.equal(n, 3)
+		assert.equal(ffi.string(i[0].iov_base, i[0].iov_len), "The")
+		assert.equal(ffi.string(i[1].iov_base, i[1].iov_len), "J")
+		assert.equal(ffi.string(i[2].iov_base, i[2].iov_len), "Man")
+	end,
 }
