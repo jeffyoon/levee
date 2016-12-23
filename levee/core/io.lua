@@ -206,8 +206,9 @@ function W_mt:write(buf, len)
 end
 
 
-function W_mt:writev(iov, n)
+function W_mt:writev(iov, n, cont)
 	if self.closed then return errors.CLOSED end
+	if cont == nil then cont = true end
 
 	local len
 	local i, total = 0, 0
@@ -231,8 +232,7 @@ function W_mt:writev(iov, n)
 			len = len - iov[i].iov_len
 			i = i + 1
 			if i == n then
-				assert(len == 0)
-				self.hub:continue()
+				if cont then self.hub:continue() end
 				return nil, total
 			end
 		end
@@ -272,7 +272,8 @@ function W_mt:__iov()
 		self.v.iovec:write_list(item)
 	end
 
-	local err, n = self:writev(self.v.iovec:value())
+	local iov, n = self.v.iovec:value()
+	local err, n = self:writev(iov, n, false)
 	if err then
 		self.v.fifo:remove(#self.v.fifo)
 		self:close()
