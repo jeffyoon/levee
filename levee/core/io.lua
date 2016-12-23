@@ -149,14 +149,11 @@ end
 
 
 function R_mt:close()
-	if self.closed then
-		return errors.CLOSED
-	end
-
+	if self.closed then return errors.CLOSED end
 	self.closed = true
 	self.hub:unregister(self.no, true)
 	self.hub:continue()
-	return
+	return true
 end
 
 
@@ -248,59 +245,65 @@ function W_mt:writev(iov, n)
 end
 
 
-function W_mt:iov(size)
-	if self.closed then return errors.CLOSED end
+function W_mt:drained()
+	if not self.v then return true end
+	if #self.v.fifo == 0 then return true end
+	self.v.drained = coroutine.running()
+	self.hub:pause()
+	return true
+end
 
-	if not self.iovec then
-		size = size or 32
 
-		local q
-		self.iovec, q = self.hub:stalk(size)
+function W_mt:__iov()
+	local ready = #self.v.fifo
 
-		-- TODO: eww, this isn't right
-		self.iovec.empty = q.empty
-		self.empty = q.empty
+	if ready == 0 then
+		if self.v.drained then
+			self.hub:resume(self.v.drained)
+			self.v.drained = nil
+		end
 
-		self.hub:spawn(function()
-			local iov = d.Iovec(size)
-
-			while true do
-				local err = q:recv()
-				if err then return end
-
-				local num = #q
-				for s in q:iter() do
-					iov:write(s)
-				end
-
-				local err, n = self:writev(iov:value())
-				if err then
-					q.fifo:remove(#q.fifo)   -- this should be handled in stalk
-					self:close()
-					return
-				end
-
-				iov:reset()
-				q:remove(num)
-			end
-		end)
+		self.v.co = coroutine.running()
+		self.hub:pause()
+		return self:__iov()
 	end
 
-	return nil, self.iovec
+	for item in self.v.fifo:iter() do
+		self.v.iovec:write_list(item)
+	end
+
+	local err, n = self:writev(self.v.iovec:value())
+	if err then
+		self.v.fifo:remove(#self.v.fifo)
+		self:close()
+		if self.v.drained then
+			self.hub:resume(self.v.drained)
+			self.v.drained = nil
+		end
+		return
+	end
+
+	self.v.iovec:reset()
+	self.v.fifo:remove(ready)
+	return self:__iov()
 end
 
 
 function W_mt:send(...)
-	if self.closed then
-		return errors.CLOSED
+	if self.closed then return errors.CLOSED end
+
+	if not self.v then
+		self.v = {}
+		self.v.fifo = d.Fifo()
+		self.v.iovec = d.Iovec(32)
+		self.hub:spawn(function() self:__iov() end)
 	end
 
-	local err, iov = self:iov()
-	if err then return err end
-	local arg = {...}
-	for i = 1, #arg do
-		local err = iov:send(arg[i])
-		if err then return err end
+	self.v.fifo:push({...})
+
+	if self.v.co then
+		self.hub:resume(self.v.co)
+		self.v.co = nil
 	end
 end
 
@@ -314,18 +317,11 @@ end
 
 
 function W_mt:close()
-	if self.closed then
-		return errors.CLOSED
-	end
-
+	if self.closed then return errors.CLOSED end
 	self.closed = true
-	if self.iovec then
-		self.iovec:close()
-		self.iovec.empty:send(true)
-	end
 	self.hub:unregister(self.no, false, true)
 	self.hub:continue()
-	return
+	return true
 end
 
 
@@ -348,19 +344,14 @@ RW_mt.write = W_mt.write
 RW_mt.writev = W_mt.writev
 RW_mt.iov = W_mt.iov
 RW_mt.send = W_mt.send
+RW_mt.__iov = W_mt.__iov
+RW_mt.drained = W_mt.drained
 RW_mt.send_msgpack = W_mt.send_msgpack
 
 
 function RW_mt:close()
-	if self.closed then
-		return
-	end
-
+	if self.closed then return errors.CLOSED end
 	self.closed = true
-	if self.iovec then
-		self.iovec:close()
-		self.iovec.empty:send(true)
-	end
 	self.hub:unregister(self.no, true, true)
 	self.hub:continue()
 	return true

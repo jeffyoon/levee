@@ -858,7 +858,7 @@ function Server_mt:_response(request, response)
 
 	if body ~= nil then
 		-- wait until headers have been sent
-		self.conn.empty:recv()
+		self.conn:drained()
 		-- wait until app signals body sent
 		local err = response:recv()
 		assert(err)
@@ -874,7 +874,7 @@ function Server_mt:_response(request, response)
 		else
 			self.conn:send(num2hex(chunk), EOL)
 			-- wait until headers have been sent
-			self.conn.empty:recv()
+			self.conn:drained()
 			-- next chunk signals continue
 			err, chunk = response:recv()
 			self.conn:send(EOL)

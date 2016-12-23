@@ -214,46 +214,6 @@ return {
 			assert(not err)
 		end,
 
-		test_iov = function()
-			local h = levee.Hub()
-
-			local r, w = h.io:pipe()
-			local err, iov = w:iov()
-
-			local want = {}
-
-			h:spawn(function()
-				for i = 1, 1000 do
-					local s = tostring(i):rep(i)
-					table.insert(want, s)
-					iov:send(s)
-				end
-
-				-- test if items are added to the queue while we are mid-write
-				local s = ("."):rep(791532)
-				table.insert(want, s)
-				iov:send(s)
-				h:continue()
-				table.insert(want, "...")
-				iov:send(".")
-				iov:send(".")
-				iov:send(".")
-
-				iov.empty:recv()
-				w:close()
-				want = table.concat(want)
-			end)
-
-			local buf = levee.d.Buffer(4096)
-			while true do
-				local err = r:readinto(buf)
-				if err then break end
-			end
-
-			assert.equal(#want, #buf)
-			assert.equal(want, buf:take())
-		end,
-
 		test_sendfile = function()
 			local h = levee.Hub()
 
@@ -282,19 +242,60 @@ return {
 			assert.equal(buf:take(), ("x"):rep(8192*1024))
 		end,
 
-		test_send = function()
+		test_send_basic = function()
 			local h = levee.Hub()
 
 			local r, w = h.io:pipe()
-			w:send("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+
+			w:send("1", "2", "3", "4", "5")
+			w:send("6", "7", "8", "9", "0")
 			assert.equal(r:reads(10), "1234567890")
+
+			w:send("6", "7", "8", "9", "0")
+			assert.equal(r:reads(5), "67890")
 
 			r:close()
 			w:send("1")
 			h:continue()
-
 			local err = w:send("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
 			assert(err)
+		end,
+
+		test_send_volume = function()
+			local h = levee.Hub()
+
+			local r, w = h.io:pipe()
+			local want = {}
+
+			h:spawn(function()
+				for i = 1, 1000 do
+					local s = tostring(i):rep(i)
+					table.insert(want, s)
+					w:send(s)
+				end
+
+				-- test if items are added to the queue while we are mid-write
+				local s = ("."):rep(791532)
+				table.insert(want, s)
+				w:send(s)
+				h:continue()
+				table.insert(want, "...")
+				w:send(".")
+				w:send(".")
+				w:send(".")
+				w:drained()
+				w:close()
+				want = table.concat(want)
+			end)
+
+			local buf = levee.d.Buffer(4096)
+			while true do
+				local err = r:readinto(buf)
+				if err then break end
+			end
+
+			assert.equal(#want, #buf)
+			assert.equal(want, buf:take())
 		end,
 
 		test_open = function()

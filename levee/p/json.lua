@@ -92,6 +92,7 @@ end
 
 function Json_mt:stream_value(stream)
 	local err = self:stream_next(stream)
+
 	if err then return err end
 
 	if self.type == C.SP_JSON_OBJECT then
