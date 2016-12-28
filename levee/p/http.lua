@@ -434,7 +434,7 @@ end
 function Map_mt:__newindex(key, val)
 	C.sp_http_map_del(self, key, #key)
 	if type(val) == "table" then
-		for _,v in ipairs(val) do
+		for __, v in ipairs(val) do
 			map_add(self, key, v)
 		end
 	elseif val then
@@ -446,8 +446,8 @@ end
 local function Map(t)
 	local m = ffi.gc(C.sp_http_map_new(), C.sp_http_map_free)
 	if t then
-		for k,v in pairs(t) do
-			m:set(k, v)
+		for k, v in pairs(t) do
+			m[k] = v
 		end
 	end
 	return m
@@ -674,13 +674,11 @@ end
 
 function Client_mt:__headers(headers)
 	-- TODO: Host
-	local ret = {
+	local ret = Map({
 		Host = self.HOST,
 		["User-Agent"] = USER_AGENT,
-		Accept = "*/*", }
-	for key, value in pairs(headers or {}) do
-		ret[key] = value
-	end
+		Accept = "*/*", })
+	for key, value in pairs(headers or {}) do ret[key] = value end
 	return ret
 end
 
@@ -699,29 +697,21 @@ function Client_mt:request(method, path, params, headers, data)
 		path = table.concat(s)
 	end
 
-	local err = self.conn:send(("%s %s %s\r\n"):format(method, path, VERSION))
-	if err then return err end
+	self.iov:write(("%s %s %s\r\n"):format(method, path, VERSION))
 
 	headers = self:__headers(headers)
 	if data then
 		headers["Content-Length"] = tostring(#data)
 	end
 
-	for k, v in pairs(headers) do
-		if type(v) == "table" then
-			for _,item in pairs(v) do
-				local err = self.conn:send(k, FIELD_SEP, item, EOL)
-				if err then return err end
-			end
-		else
-			local err = self.conn:send(k, FIELD_SEP, v, EOL)
-			if err then return err end
-		end
-	end
-	self.conn:send(EOL)
+	self.iov:write(headers)
+	self.iov:write(EOL)
+	local err = self.conn:writev(self.iov:value())
+	if err then return err end
+	self.iov:reset()
 
 	if data then
-		local err = self.conn:send(data)
+		local err = self.conn:write(data)
 		if err then return err end
 	end
 
@@ -838,7 +828,7 @@ function Server_mt:_response(request, response)
 
 	for k, v in pairs(headers) do
 		if type(v) == "table" then
-			for _, item in pairs(v) do
+			for __, item in pairs(v) do
 				local err = self.conn:send(k, FIELD_SEP, item, EOL)
 				if err then return err end
 			end
@@ -1046,6 +1036,8 @@ function HTTP_mt:connect(port, host, options)
 
 	m.stream = m.conn:stream()
 	m.parser = parser.Response(options.parser)
+
+	m.iov = d.Iovec(32)
 
 	m.response_to_request = {}
 	local res_sender, res_recver = self.hub:pipe()
