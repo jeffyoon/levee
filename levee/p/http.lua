@@ -378,8 +378,6 @@ end
 --
 -- Map
 -- TODO: redo the scatter/scatter_count interface
-
-
 local Map_mt = {}
 
 
@@ -455,7 +453,6 @@ end
 
 
 ffi.metatype("SpHttpMap", Map_mt)
-
 
 
 --
