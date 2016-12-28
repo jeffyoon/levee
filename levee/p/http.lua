@@ -699,8 +699,9 @@ function Client_mt:request(method, path, params, headers, data)
 		path = table.concat(s)
 	end
 
-	local err = self.conn:send(("%s %s %s\r\n"):format(method, path, VERSION))
-	if err then return err end
+	local buf = self.buf
+
+	buf:push(("%s %s HTTP/1.1\r\n"):format(method, path))
 
 	headers = self:__headers(headers)
 	if data then
@@ -709,19 +710,18 @@ function Client_mt:request(method, path, params, headers, data)
 
 	for k, v in pairs(headers) do
 		if type(v) == "table" then
-			for _,item in pairs(v) do
-				local err = self.conn:send(k, FIELD_SEP, item, EOL)
-				if err then return err end
-			end
+			for __, item in pairs(v) do buf:push(("%s: %s\r\n"):format(k, item)) end
 		else
-			local err = self.conn:send(k, FIELD_SEP, v, EOL)
-			if err then return err end
+			buf:push(("%s: %s\r\n"):format(k, v))
 		end
 	end
-	self.conn:send(EOL)
+	buf:push(EOL)
+
+	self.conn:write(buf:value())
+	buf:trim()
 
 	if data then
-		local err = self.conn:send(data)
+		local err = self.conn:write(data)
 		if err then return err end
 	end
 
@@ -1046,6 +1046,7 @@ function HTTP_mt:connect(port, host, options)
 
 	m.stream = m.conn:stream()
 	m.parser = parser.Response(options.parser)
+	m.buf = d.Buffer(4096)
 
 	m.response_to_request = {}
 	local res_sender, res_recver = self.hub:pipe()
